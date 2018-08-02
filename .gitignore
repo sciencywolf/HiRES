@@ -1,0 +1,16 @@
+# Temporary and binary files
+__pycache__/
+*~
+*.py[cod]
+
+# Datasets folder
+datasets/
+
+# Sphinx documentation
+docs/_build/
+docs/_build/*
+docs/_rst/*
+docs/api/*
+
+# Jupyter Notebook
+.ipynb_checkpoints

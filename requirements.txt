@@ -1,0 +1,12 @@
+numpy
+scipy
+pandas
+matplotlib
+seaborn
+jupyter
+notebook
+pillow
+scikit-learn
+scikit-image
+keras
+tensorflow

@@ -53,3 +53,4 @@ def show_glyph_sample(latex, dspath, nb=6):
             if len(im.shape)==3:
                     im = im[:,:,0]
             ax[i//n,i%n].imshow(im, cmap=cm.binary_r)
+    plt.show()

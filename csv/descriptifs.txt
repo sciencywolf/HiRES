@@ -1,0 +1,4 @@
+# 2018-08-29
+# Première version, symboles inutiles et/ou non-mathématiques supprimés
+hasyv2_20180829.csv 
+detexify_20180829.csv

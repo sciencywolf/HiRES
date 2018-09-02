@@ -2,3 +2,11 @@
 # Première version, symboles inutiles et/ou non-mathématiques supprimés
 hasyv2_20180829.csv 
 detexify_20180829.csv
+
+# 2018-08-31
+# Fusion des classes de symboles identiques d'après symbol_merging.pdf
+detexify_20180831.csv
+
+# 2018-09-02
+# Fusion des datasets Detexify et HASYv2
+fusion_20180902.csv

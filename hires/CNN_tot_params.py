@@ -95,16 +95,17 @@ y_test_2=pd.get_dummies(y_test)
 # In[ ]:
 
 
-Filters1=[30]
-Filters2=[15]
-Dropo=[0.25]
-Dense1=[500]
-Dense2=[300]
 
-nb_epoch1=[12]
+Filters1=[32]
+Filters2=[16]
+Dropo=[0.3]
+Dense1=[600]
+Dense2=[400]
+
+nb_epoch1=[10]
 batch_si=[200]
 d_score_5=dict()
-for nb_f1,nb_f2,dropo,dense1,dense2,nb_ep,batch_si in itertools.product(Filters,Filters2,Dropo,Dense1,Dense2,nb_epoch1,batch_si):
+for nb_f1,nb_f2,dropo,dense1,dense2,nb_ep,batch_si in itertools.product(Filters1,Filters2,Dropo,Dense1,Dense2,nb_epoch1,batch_si):
     model=Sequential()
     model.add(Conv2D(nb_filter=nb_f1, nb_row=5, nb_col=5, border_mode="valid", input_shape=(1,32,32),activation='relu',data_format="channels_first"))
     model.add(MaxPooling2D(pool_size=(2,2)))
@@ -121,5 +122,5 @@ for nb_f1,nb_f2,dropo,dense1,dense2,nb_ep,batch_si in itertools.product(Filters,
     pred=model.predict(X_test)
     scores = model.evaluate(X_test, y_test_2, verbose=0)
     print("Perte: %.2f Erreur: %.2f%%" % (scores[0], 100-scores[1]*100))
-    d_score_5[(nb_f,dropo,dense1,dense2,nb_ep,batch_si)]=scores[1]*100
+    d_score_5[(nb_f1,nb_f2,dropo,dense1,dense2,nb_ep,batch_si)]=scores[1]*100
 

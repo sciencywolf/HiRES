@@ -231,6 +231,6 @@ def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False)
         #plt.plot(np.ones((line.shape[1]))*np.median([bboxes[i]['centery'] for i in bboxes]))
 
 
-
-fpath = '../datasets/formulas/im2.png'
-split_formula(fpath, areas=range(25), plot=True)
+if __name__ == "__main__":
+    fpath = '../datasets/formulas/im2.png'
+    split_formula(fpath, areas=range(25), plot=True)

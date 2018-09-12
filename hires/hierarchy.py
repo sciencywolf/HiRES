@@ -13,7 +13,7 @@ import multiprocessing
 import string
 import cv2
 import sympy as sym
-from formula import contours_extraction
+from formula import contours_extraction, test_formula
 
 #%% Generation of hierarchical data
 def append(x,y):
@@ -133,7 +133,7 @@ def generate_pair_dataset(path, dsname):
     data = []
     for fname in os.listdir(path):
         fpath = path+fname
-        im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
+        im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
         im_res = cv2.resize(im, (im.shape[1]*2, im.shape[0]*2), interpolation = cv2.INTER_CUBIC)
         ret, im_bin = cv2.threshold(im_res,125,255,cv2.THRESH_BINARY)
         
@@ -162,7 +162,7 @@ def generate_pair_dataset(path, dsname):
     else:
         print('File aleady exists')
 
-
+#generate_pair_dataset('../datasets/Formulas/hierarchy-data/', 'relation_20180912.csv')
 #%% Classifiation
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
@@ -171,26 +171,32 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
 
 #df = pd.read_csv('../datasets/relation_20180905.csv')
-df1 = pd.read_csv('../datasets/relation_20180905.csv')
-df2 = pd.read_csv('../datasets/relation_20180905_spaces.csv')
+df1 = pd.read_csv('../datasets/relation_20180912.csv')
+df2 = pd.read_csv('../datasets/relation_20180912_spaces.csv')
 df = pd.concat([df1, df2], ignore_index=True)
 labels = ['dist_left','dist_right',
           'dist_top','dist_bottom',
-          'dist_cx', 'dist_cy', 'angle', 
-          'dist_cx_left', 'dist_cx_right', 
+          'dist_cx', 'dist_cy', 'angle',
+          'dist_cx_left', 'dist_cx_right',
           'dist_cy_top', 'dist_cy_bottom',
-          'dist_bottomright_middletop', 'dist_bottomright_middlebottom', 
-          'dist_topright_middletop', 'dist_topright_middlebottom'] 
+          'dist_bottomright_middletop', 'dist_bottomright_middlebottom',
+          'dist_topright_middletop', 'dist_topright_middlebottom']
 #labels = ['dist_left','dist_right','dist_top','dist_bottom','dist_cx', 'dist_cy', 'angle']
-target = df[df.warning==False]["relationship"]
+target = df[df.warning==False][["relationship","path"]]
 data = df[df.warning==False][labels]
 
 X_train, X_test, y_train, y_test = train_test_split(data, target, test_size=0.2, shuffle=True, random_state=42)
+
+train_path = y_train['path']
+y_train = y_train['relationship']
+test_path = y_test['path']
+y_test = y_test['relationship']
 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
+#%% Search best params
 svm = SVC()
 
 param_grid = {
@@ -211,4 +217,221 @@ print('score test',cv_svm.score(X_test_scaled, y_test))
 print(classification_report(y_train, train_pred, digits=3))
 print(classification_report(y_test, test_pred, digits=3))
 
+#%% 
+svm = SVC(kernel='rbf', C=1.0, gamma=0.1)
 
+svm.fit(X_train_scaled, y_train)
+
+test_pred = svm.predict(X_test_scaled)
+train_pred = svm.predict(X_train_scaled)
+
+print('score train',svm.score(X_train_scaled, y_train))
+print('score test',svm.score(X_test_scaled, y_test))
+print(classification_report(y_train, train_pred, digits=3))
+print(classification_report(y_test, test_pred, digits=3))
+
+
+#%%
+
+from scipy.spatial import Delaunay, Voronoi
+import itertools
+
+def voronoi_finite_polygons_2d(vor, radius=None):
+    """
+    Reconstruct infinite voronoi regions in a 2D diagram to finite
+    regions.
+
+    Parameters
+    ----------
+    vor : Voronoi
+        Input diagram
+    radius : float, optional
+        Distance to 'points at infinity'.
+
+    Returns
+    -------
+    regions : list of tuples
+        Indices of vertices in each revised Voronoi regions.
+    vertices : list of tuples
+        Coordinates for revised Voronoi vertices. Same as coordinates
+        of input vertices, with 'points at infinity' appended to the
+        end.
+
+    """
+
+    if vor.points.shape[1] != 2:
+        raise ValueError("Requires 2D input")
+
+    new_regions = []
+    new_vertices = vor.vertices.tolist()
+
+    center = vor.points.mean(axis=0)
+    if radius is None:
+        radius = vor.points.ptp().max()
+
+    # Construct a map containing all ridges for a given point
+    all_ridges = {}
+    for (p1, p2), (v1, v2) in zip(vor.ridge_points, vor.ridge_vertices):
+        all_ridges.setdefault(p1, []).append((p2, v1, v2))
+        all_ridges.setdefault(p2, []).append((p1, v1, v2))
+
+    # Reconstruct infinite regions
+    for p1, region in enumerate(vor.point_region):
+        vertices = vor.regions[region]
+
+        if all(v >= 0 for v in vertices):
+            # finite region
+            new_regions.append(vertices)
+            continue
+
+        # reconstruct a non-finite region
+        ridges = all_ridges[p1]
+        new_region = [v for v in vertices if v >= 0]
+
+        for p2, v1, v2 in ridges:
+            if v2 < 0:
+                v1, v2 = v2, v1
+            if v1 >= 0:
+                # finite ridge: already in the region
+                continue
+
+            # Compute the missing endpoint of an infinite ridge
+
+            t = vor.points[p2] - vor.points[p1] # tangent
+            t /= np.linalg.norm(t)
+            n = np.array([-t[1], t[0]])  # normal
+
+            midpoint = vor.points[[p1, p2]].mean(axis=0)
+            direction = np.sign(np.dot(midpoint - center, n)) * n
+            far_point = vor.vertices[v2] + direction * radius
+            
+            if far_point.tolist() not in new_vertices:
+                new_region.append(len(new_vertices))
+                new_vertices.append(far_point.tolist())
+            else:
+                new_region.append(new_vertices.index(far_point.tolist()))
+
+        # sort region counterclockwise
+        vs = np.asarray([new_vertices[v] for v in new_region])
+        c = vs.mean(axis=0)
+        angles = np.arctan2(vs[:,1] - c[1], vs[:,0] - c[0])
+        new_region = np.array(new_region)[np.argsort(angles)]
+
+        # finish
+        new_regions.append(new_region.tolist())
+
+    #np.array(regions)[np.argsort(vor.point_region)].tolist()
+    return new_regions, np.asarray(new_vertices)
+
+
+def ccw(A,B,C):
+    return (C[1]-A[1]) * (B[0]-A[0]) > (B[1]-A[1]) * (C[0]-A[0])
+
+# Return true if line segments AB and CD intersect
+def intersect(A,B,C,D):
+    return ccw(A,C,D) != ccw(B,C,D) and ccw(A,B,C) != ccw(A,B,D)
+
+def show(im):
+    plt.imshow(im, origin='lower', cmap=cm.binary_r)
+    plt.show()
+
+def ppc(im, bboxes):
+    None
+
+fpath =  "../datasets/Formulas/formulas-data/im3.png"
+
+im, bboxes = test_formula(fpath, areas = range(1,16))
+
+points = np.array([[bboxes[i]["centerx"], bboxes[i]["centery"]] for i in bboxes.keys()])
+
+
+# compute Voronoi tesselation
+try:
+    vor = Voronoi(points)
+    tri = Delaunay(points)
+
+    neighbors = {}
+    for p in tri.vertices:
+        for i,j in itertools.combinations(p,2):
+            nj = ((j,), ())[j in neighbors.get(i,())]
+            ni = ((i,), ())[i in neighbors.get(j,())]
+            neighbors[i] = neighbors.get(i,()) + nj
+            neighbors[j] = neighbors.get(j,()) + ni
+            
+    regions, vertices = voronoi_finite_polygons_2d(vor)
+
+    direct_neighbors = {}
+    for p in neighbors.keys():
+        for n in neighbors[p]:
+            edge = list(set(regions[p]).intersection(regions[n]))
+            if len(edge)==2:
+                A = vor.points[p]
+                B = vor.points[n]
+                C,D = vertices[edge]
+                if intersect(A,B,C,D):
+                    an = ((n,), ())[n in direct_neighbors.get(p,())]
+                    ap = ((p,), ())[p in direct_neighbors.get(n,())]
+                    direct_neighbors[p] = direct_neighbors.get(p,()) + an
+                    direct_neighbors[n] = direct_neighbors.get(n,()) + ap
+
+    fov_neighbors = {}
+    for p in neighbors.keys():
+        A = vor.points[p]
+        for n in neighbors[p]:
+            mask = np.isin(neighbors[p],[n], invert=True)
+            is_visible = True
+            B = vor.points[n]
+            for q in np.array(neighbors[p])[mask]:
+                for edge in bboxes[q]['edges']:
+                    C,D = edge
+                    if intersect(A,B,C,D):
+                        is_visible = False
+                        break
+            if is_visible:
+                an = ((n,), ())[n in fov_neighbors.get(p,())]
+                ap = ((p,), ())[p in fov_neighbors.get(n,())]
+                fov_neighbors[p] = fov_neighbors.get(p,()) + an
+                fov_neighbors[n] = fov_neighbors.get(n,()) + ap
+except:
+    fov_neighbors = direct_neighbors = {0:(1,),1:(0,)}
+
+
+
+
+
+
+fig, ax = plt.subplots()
+ax.imshow(np.sum([bboxes[i]['marker'] for i in bboxes.keys()], axis=0), origin='lower', cmap=cm.binary)
+ax.scatter(points[:,0], points[:,1])
+
+for i in bboxes.keys():
+    for j in fov_neighbors[i]:
+        if j>i:
+            ax.plot(points[[i,j],0], points[[i,j],1],'k')
+
+for i, txt in enumerate(range(len(points))):
+    ax.annotate(txt, (points[i,0]+5, points[i,1]+5), color='r')
+
+for i in bboxes.keys():
+    for n in direct_neighbors[i]:
+        features = np.array(extract_features(bboxes[i], bboxes[n])).reshape(1,-1)
+        features_scaled = scaler.transform(features)
+        print(i,n)
+        print(svm.predict(features_scaled))
+
+
+
+# colorize
+#for region in regions[:3]:
+#    polygon = vertices[region]
+#    plt.fill(*zip(*polygon), alpha=0.4)
+#
+#plt.plot(points[:,0], points[:,1], 'ko')
+#plt.xlim(vor.min_bound[0] - 0.1, vor.max_bound[0] + 0.1)
+#plt.ylim(vor.min_bound[1] - 0.1, vor.max_bound[1] + 0.1)
+#
+#plt.show()
+
+#for region in np.array(regions).tolist():
+#    polygon = vertices[region+region[:1]]
+#    plt.plot(*zip(*polygon))

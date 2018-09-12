@@ -84,7 +84,7 @@ def contours_extraction(im, crop=False, plot=False):
     for index, contour in enumerate(contours):
         [x,y,w,h] = cv2.boundingRect(contour)
         marker = (im_not*(markers==index))#[y:y+h, x:x+w]
-        bboxes[index] = {'contour':contour, 'marker':marker,
+        bboxes[index] = {'contour':contour, 'marker':marker[y:y+h+1,x:x+w+1][::-1], 'marker_full':marker,
                          'box':(x,y,w,h), 'centerx':x+0.5*w,
                          'centery':y+0.5*h, 'top':y+h,
                          'bottom':y, 'right':x+w,
@@ -110,8 +110,9 @@ def contours_extraction(im, crop=False, plot=False):
     im_recta = cv2.addWeighted(im_alpha, alpha, im_beta, beta, 0.0)
     if plot==True:
         fig, ax = plt.subplots()
-        ax.imshow(im_recta)
+        ax.imshow(im_recta, origin='lower', cmap=cm.binary_r)
         fig.show()
+        
     
     points = np.array([[bboxes[i]["centerx"], bboxes[i]["centery"]] for i in bboxes.keys()])
     order, newpoints = zip(*[(i[0],i[1]) for i in sorted(enumerate(points), key=lambda x:(x[1][0],-x[1][1]))])
@@ -158,17 +159,20 @@ def zhangSuen(im):
 
 
 def extract_glyphs(bboxes, plot=False):
-    for i in range(len(bboxes.keys())):
+    glyphs = np.zeros((len(bboxes.keys()),32,32))
+    for i in bboxes.keys():
         resized = get_square(bboxes[i]['marker'], 32)
         cv2.normalize(resized, resized, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
         ret, res_norm = cv2.threshold(resized,125,255,cv2.THRESH_BINARY)
         skel = zhangSuen(res_norm).astype(np.uint8)
         kernel = cv2.getStructuringElement(cv2.MORPH_CROSS,(2,2))
         glyph = cv2.dilate(skel, kernel)
+        glyphs[i] = np.bitwise_not(glyph)
         if (i < 20) & plot:
             fig, ax = plt.subplots()
-            ax.imshow(glyph, cmap=cm.binary)
+            ax.imshow(glyph, cmap=cm.binary_r)
             fig.show()
+    return glyphs
 
 
 def show_outlines(bboxes):
@@ -240,7 +244,7 @@ def test_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
 
 
 def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
-    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
+    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
     im = cv2.resize(im, (im.shape[1]*2, im.shape[0]*2), interpolation = cv2.INTER_CUBIC)
     cv2.normalize(im, im, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
     im = image_mode(im)
@@ -251,16 +255,15 @@ def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False)
     im_clean = residue_removal(im_thresh, areas)
     im_deskew = deskew(im_clean)
     #lines = segment_lines(im_deskew)
-    lines = [im_deskew]
+    #lines = [im_deskew]
 
-    for line in lines:
-        bboxes = contours_extraction(line, crop, plot)
-        extract_glyphs(bboxes, plot=True)
-        #plt.plot(np.ones((line.shape[1]))*np.median([bboxes[i]['centery'] for i in bboxes]))
-
+    bboxes = contours_extraction(im_deskew, crop, plot)
+    glyphs = extract_glyphs(bboxes, plot=False)
+    #plt.plot(np.ones((line.shape[1]))*np.median([bboxes[i]['centery'] for i in bboxes]))
+    return glyphs
 
 
 
 if __name__ == "__main__":
-    fpath = '../datasets/Formulas/formulas-data/xkcd3b.png'
-    split_formula(fpath, areas=range(25), plot=True)
+    fpath = '../datasets/Formulas/formulas-data/im15.png'
+    glyphs = split_formula(fpath, areas=range(16), plot=True)

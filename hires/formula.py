@@ -83,12 +83,19 @@ def contours_extraction(im, crop=False, plot=False):
     im_beta = im_alpha.copy()
     for index, contour in enumerate(contours):
         [x,y,w,h] = cv2.boundingRect(contour)
-        marker = (im_not*(markers==index))[y:y+h, x:x+w]
+        marker = (im_not*(markers==index))#[y:y+h, x:x+w]
         bboxes[index] = {'contour':contour, 'marker':marker,
                          'box':(x,y,w,h), 'centerx':x+0.5*w,
                          'centery':y+0.5*h, 'top':y+h,
                          'bottom':y, 'right':x+w,
-                         'left':x}
+                         'left':x, 'edges':np.array([[[x,y],[x,y+h]],
+                                                     [[x,y],[x+w,y]],
+                                                     [[x,y+h],[x+w,y+h]],
+                                                     [[x+w,y],[x+w,y+h]]]),
+                         'corners':np.array([[x,y],
+                                             [x,y+h],
+                                             [x+w,y],
+                                             [x+w,y+h]])}
 
         if w <1 and h<1:
             continue
@@ -105,8 +112,12 @@ def contours_extraction(im, crop=False, plot=False):
         fig, ax = plt.subplots()
         ax.imshow(im_recta)
         fig.show()
-
-    return bboxes
+    
+    points = np.array([[bboxes[i]["centerx"], bboxes[i]["centery"]] for i in bboxes.keys()])
+    order, newpoints = zip(*[(i[0],i[1]) for i in sorted(enumerate(points), key=lambda x:(x[1][0],-x[1][1]))])
+    newbboxes = {n: bboxes[i] for n,i in enumerate(order)}
+    
+    return newbboxes #return bboxes
 
 
 def neighbours(im):
@@ -211,6 +222,23 @@ def segment_lines(im):
     
     return lines
 
+
+def test_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
+    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
+    im = cv2.resize(im, (im.shape[1]*2, im.shape[0]*2), interpolation = cv2.INTER_CUBIC)
+    cv2.normalize(im, im, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
+    im = image_mode(im)
+
+    im_blur = noise_removal(im, blur, radius)
+    im_thresh = cv2.adaptiveThreshold(im_blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 20)
+
+    im_clean = residue_removal(im_thresh, areas)
+    im_deskew = deskew(im_clean)
+    
+    bboxes = contours_extraction(im_deskew, crop, plot)
+    return im_deskew, bboxes
+
+
 def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
     im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
     im = cv2.resize(im, (im.shape[1]*2, im.shape[0]*2), interpolation = cv2.INTER_CUBIC)
@@ -231,6 +259,8 @@ def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False)
         #plt.plot(np.ones((line.shape[1]))*np.median([bboxes[i]['centery'] for i in bboxes]))
 
 
+
+
 if __name__ == "__main__":
-    fpath = '../datasets/formulas/im2.png'
+    fpath = '../datasets/Formulas/formulas-data/xkcd3b.png'
     split_formula(fpath, areas=range(25), plot=True)

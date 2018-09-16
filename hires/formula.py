@@ -114,7 +114,7 @@ def contours_extraction(im, crop=False, plot=False):
         fig.show()
         
     
-    points = np.array([[bboxes[i]["centerx"], bboxes[i]["centery"]] for i in bboxes.keys()])
+    points = np.array([[bboxes[i]["left"], bboxes[i]["centery"]] for i in bboxes.keys()])
     order, newpoints = zip(*[(i[0],i[1]) for i in sorted(enumerate(points), key=lambda x:(x[1][0],-x[1][1]))])
     newbboxes = {n: bboxes[i] for n,i in enumerate(order)}
     
@@ -226,10 +226,20 @@ def segment_lines(im):
     
     return lines
 
+def ROI_crop(im):
+    xmin, xmax = np.where(cv2.reduce(np.bitwise_not(im), 0, cv2.REDUCE_MAX).reshape(-1)==255)[0][[0,-1]]
+    ymin, ymax = np.where(cv2.reduce(np.bitwise_not(im), 1, cv2.REDUCE_MAX).reshape(-1)==255)[0][[0,-1]]
+    padding = min(xmax-xmin, ymax-ymin)//10+2
+    xmin_crop = (xmin-padding, 0)[xmin<padding]
+    xmax_crop = (xmax+padding, xmax)[im.shape[0]<xmax+padding]
+    ymin_crop = (ymin-padding, 0)[ymin<padding]
+    ymax_crop = (ymax+padding, ymax)[im.shape[1]<ymax+padding]
+    return im[ymin_crop:ymax_crop, xmin_crop:xmax_crop]
 
-def test_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
+def test_formula(fpath, upscale=False, blur=None, radius=3, areas=[1], crop=False, plot=False):
     im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
-    im = cv2.resize(im, (im.shape[1]*2, im.shape[0]*2), interpolation = cv2.INTER_CUBIC)
+    ufactor = (1,2)[upscale]
+    im = cv2.resize(im, (im.shape[1]*ufactor, im.shape[0]*ufactor), interpolation = cv2.INTER_CUBIC)
     cv2.normalize(im, im, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
     im = image_mode(im)
 
@@ -238,14 +248,16 @@ def test_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
 
     im_clean = residue_removal(im_thresh, areas)
     im_deskew = deskew(im_clean)
-    
-    bboxes = contours_extraction(im_deskew, crop, plot)
-    return im_deskew, bboxes
+    im_crop = ROI_crop(im_deskew)
+    bboxes = contours_extraction(im_crop, crop, plot)
+
+    return im_crop, bboxes
 
 
-def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False):
+def split_formula(fpath, upscale=False, blur=None, radius=3, areas=[1], crop=False, plot=False):
     im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
-    im = cv2.resize(im, (im.shape[1]*2, im.shape[0]*2), interpolation = cv2.INTER_CUBIC)
+    ufactor = (1,2)[upscale]
+    im = cv2.resize(im, (im.shape[1]*ufactor, im.shape[0]*ufactor), interpolation = cv2.INTER_CUBIC)
     cv2.normalize(im, im, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
     im = image_mode(im)
 
@@ -256,8 +268,8 @@ def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False)
     im_deskew = deskew(im_clean)
     #lines = segment_lines(im_deskew)
     #lines = [im_deskew]
-
-    bboxes = contours_extraction(im_deskew, crop, plot)
+    im_crop = ROI_crop(im_deskew)
+    bboxes = contours_extraction(im_crop, crop, plot)
     glyphs = extract_glyphs(bboxes, plot=False)
     #plt.plot(np.ones((line.shape[1]))*np.median([bboxes[i]['centery'] for i in bboxes]))
     return glyphs
@@ -265,5 +277,5 @@ def split_formula(fpath, blur=None, radius=3, areas=[1], crop=False, plot=False)
 
 
 if __name__ == "__main__":
-    fpath = '../datasets/Formulas/formulas-data/im15.png'
+    fpath = '../datasets/Formulas/formulas-data/test1.png'
     glyphs = split_formula(fpath, areas=range(16), plot=True)

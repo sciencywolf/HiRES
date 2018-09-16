@@ -14,7 +14,7 @@ import multiprocessing
 import string
 import cv2
 import sympy as sym
-from formula import contours_extraction, test_formula
+from formula import contours_extraction, test_formula, extract_glyphs
 import networkx as nx
 
 
@@ -517,7 +517,7 @@ def globbox(bboxes, elems):
 from time import time
 
 t_start = time()
-fpath =  "../datasets/Formulas/formulas-data/im15.png"
+fpath =  "../datasets/Formulas/formulas-data/t4.png"
 
 max_area = min(im.shape)//9
 im, bboxes = test_formula(fpath, areas = range(1,27))
@@ -555,6 +555,13 @@ ax.scatter(points[:,0], points[:,1])
 for i, txt in enumerate(range(len(points))):
     ax.annotate(txt, (points[i,0]+5, points[i,1]+5), color='r')
 
+
+for i in bboxes.keys():
+    for n in direct_neighbors[i]:
+        features = np.array(extract_features(bboxes[i], bboxes[n])).reshape(1,-1)
+        features_scaled = scaler.transform(features)
+        print(i,n)
+        print(svm.predict(features_scaled))
 
 #%%
 

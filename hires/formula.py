@@ -231,13 +231,13 @@ def ROI_crop(im):
     ymin, ymax = np.where(cv2.reduce(np.bitwise_not(im), 1, cv2.REDUCE_MAX).reshape(-1)==255)[0][[0,-1]]
     padding = min(xmax-xmin, ymax-ymin)//10+2
     xmin_crop = (xmin-padding, 0)[xmin<padding]
-    xmax_crop = (xmax+padding, xmax)[im.shape[0]<xmax+padding]
+    xmax_crop = (xmax+padding, im.shape[1])[im.shape[0]<xmax+padding]
     ymin_crop = (ymin-padding, 0)[ymin<padding]
-    ymax_crop = (ymax+padding, ymax)[im.shape[1]<ymax+padding]
+    ymax_crop = (ymax+padding, im.shape[1])[im.shape[1]<ymax+padding]
     return im[ymin_crop:ymax_crop, xmin_crop:xmax_crop]
 
 def test_formula(fpath, upscale=False, blur=None, radius=3, areas=[1], crop=False, plot=False):
-    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
+    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
     ufactor = (1,2)[upscale]
     im = cv2.resize(im, (im.shape[1]*ufactor, im.shape[0]*ufactor), interpolation = cv2.INTER_CUBIC)
     cv2.normalize(im, im, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)
@@ -255,7 +255,7 @@ def test_formula(fpath, upscale=False, blur=None, radius=3, areas=[1], crop=Fals
 
 
 def split_formula(fpath, upscale=False, blur=None, radius=3, areas=[1], crop=False, plot=False):
-    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)[::-1]
+    im = cv2.imread(fpath, cv2.IMREAD_GRAYSCALE)
     ufactor = (1,2)[upscale]
     im = cv2.resize(im, (im.shape[1]*ufactor, im.shape[0]*ufactor), interpolation = cv2.INTER_CUBIC)
     cv2.normalize(im, im, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC1)

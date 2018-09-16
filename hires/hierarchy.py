@@ -1,19 +1,22 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
 import os
+os.chdir('/home/lucien/Documents/Formation-Data-Scientist/Projet/HiRES/hires/')
+
 import time
 import numpy as np
 import pandas as pd
 import sympy as sym
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
-import matplotlib
-import threading
 import multiprocessing
 import string
 import cv2
 import sympy as sym
 from formula import contours_extraction, test_formula
+import networkx as nx
+
 
 #%% Generation of hierarchical data
 def append(x,y):
@@ -163,6 +166,7 @@ def generate_pair_dataset(path, dsname):
         print('File aleady exists')
 
 #generate_pair_dataset('../datasets/Formulas/hierarchy-data/', 'relation_20180912.csv')
+
 #%% Classifiation
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
@@ -197,25 +201,26 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
 #%% Search best params
-svm = SVC()
-
-param_grid = {
-    'kernel': ['linear', 'rbf'],
-    'C': [1.0, 2., 3., 5., 8., 10.],
-    'gamma': ['auto', 0.1, 1.0, 1.5, 2]
-}
-
-cv_svm = GridSearchCV(estimator=svm, scoring='f1_micro', param_grid=param_grid, cv= 5)
-
-cv_svm.fit(X_train_scaled, y_train)
-
-test_pred = cv_svm.predict(X_test_scaled)
-train_pred = cv_svm.predict(X_train_scaled)
-
-print('score train',cv_svm.score(X_train_scaled, y_train))
-print('score test',cv_svm.score(X_test_scaled, y_test))
-print(classification_report(y_train, train_pred, digits=3))
-print(classification_report(y_test, test_pred, digits=3))
+def grid_search_svc():
+    svm = SVC()
+    
+    param_grid = {
+        'kernel': ['linear', 'rbf'],
+        'C': [1.0, 2., 3., 5., 8., 10.],
+        'gamma': ['auto', 0.1, 1.0, 1.5, 2]
+    }
+    
+    cv_svm = GridSearchCV(estimator=svm, scoring='f1_micro', param_grid=param_grid, cv= 5)
+    
+    cv_svm.fit(X_train_scaled, y_train)
+    
+    test_pred = cv_svm.predict(X_test_scaled)
+    train_pred = cv_svm.predict(X_train_scaled)
+    
+    print('score train',cv_svm.score(X_train_scaled, y_train))
+    print('score test',cv_svm.score(X_test_scaled, y_test))
+    print(classification_report(y_train, train_pred, digits=3))
+    print(classification_report(y_test, test_pred, digits=3))
 
 #%% 
 svm = SVC(kernel='rbf', C=1.0, gamma=0.1)
@@ -335,15 +340,223 @@ def show(im):
     plt.imshow(im, origin='lower', cmap=cm.binary_r)
     plt.show()
 
-def ppc(im, bboxes):
-    None
+def _finditem(obj, key):
+    if key in obj: return obj[key]
+    for k, v in obj.items():
+        if isinstance(v,dict):
+            item = _finditem(v, key)
+            if item is not None:
+                return item
 
-fpath =  "../datasets/Formulas/formulas-data/im3.png"
+def pairs(l):
+    return zip(l[:-1], l[1:])
 
-im, bboxes = test_formula(fpath, areas = range(1,16))
+def formula_compounds(keys, level):
+    im = np.sum([bboxes[k]['marker_full'] for k in keys], 0).astype(np.uint8)
+    hist = cv2.reduce(im, (level+1)%2, cv2.REDUCE_MAX).reshape(-1).astype(np.float)
+    blanks = np.array([i for i,n in enumerate(hist) if n==0])
+    steps = [0]+[i for i,n in enumerate(abs(blanks[1:]-blanks[:-1])) if n>1]+[None]
+    bounds = [np.mean(blanks[u:v]) for u,v in pairs(steps)]
+    compounds = [[i for i,cx,cy,l in [coords[k] for k in keys] if (m < (l,cy)[level%2==0] < n)] for m,n in pairs(bounds)]
+#    plt.figure()
+#    plt.imshow(im, origin='lower', cmap=cm.binary)
+#    for l in bounds:
+#        if level%2==0:
+#            plt.axhline(l)
+#        else:
+#            plt.axvline(l)
+    return compounds
+
+import networkx as nx
+from collections import defaultdict
+
+
+def read_struct(struct, nodes):
+    return exec('struct{}'.format(''.join(['[{}]'.format(i) for i in nodes])))
+
+def update_struct(struct, nodes):
+    return exec('struct{}'.format(''.join(['[{}]'.format(i) for i in nodes])))
+
+def nested_dict():
+    return defaultdict(nested_dict)
+
+def ppc(bboxes):
+    keys = [k for k in bboxes.keys()]
+    struct = nested_dict()
+    
+    leaves = []
+    n_leaves = len(keys)
+    level = 0
+    comps_id = [0]
+    struct['comps_list'] = [0]
+    struct['levels'] = {0:{'comps':{'root':[0]}}}
+    struct[0] = {'keys':keys}
+    while len(leaves)<n_leaves:
+        for parent in struct['levels'][level]['comps'].keys():
+            for c in struct['levels'][level]['comps'][parent]:
+                subcomps = formula_compounds(struct[c]['keys'], level)
+                print(subcomps)
+                if (struct[c]['keys'] in subcomps) and level>0:
+                    i_ne = [len(x)!=0 for x in subcomps].index(True)
+                    subcomps = [subcomps[i_ne][:1], subcomps[i_ne][1:]]
+                n_comps = len(subcomps)
+                cid = struct['comps_list'][-1]+1
+                
+                subcomps_id = list(range(cid, cid+n_comps))
+                struct['comps_list']= struct['comps_list']+subcomps_id
+                for scid, sc in zip(subcomps_id,subcomps):
+                    try:
+                        struct['levels'][level+1]
+                    except:
+                        struct['levels'][level+1] = {}
+                    if len(sc)==1:
+                        leaves.append((level,c,scid, sc[0]))
+                        comp_type = 'elems'
+                        #struct['levels'][level+1]['elems'] = struct['levels'][level+1].get('elems',{}).get('')+[scid]
+                    else:
+                        comp_type = 'comps'
+                        #struct['levels'][level+1]['comps'] = struct['levels'][level+1].get('comps',[])+[scid]
+                    
+                    try:
+                        struct['levels'][level+1][comp_type]
+                    except:
+                        struct['levels'][level+1][comp_type] = {}
+                    
+                    struct['levels'][level+1][comp_type][c] = struct['levels'][level+1][comp_type].get(c,[])+[scid]
+                    struct[scid]={'keys':np.ravel(sc).tolist()}
+        try:
+            struct['levels'][level+1]['comps']
+        except:
+            break
+        level += 1
+    return struct, leaves
+
+
+def create_graph(struct):
+    F = nx.DiGraph()
+    cid = 0
+    for k,v in struct['levels'].items():
+        for key in v.keys():
+            for i,j in v[key].items():
+                F.add_edges_from([(i,n) for n in j])
+
+    mapping={} #{0:'a',1:'b',2:'c'}
+    cid = 0
+    for n in list(F.nodes())[1:]:
+        if len(struct[n]['keys'])!=1:
+            newname='comp_{}'.format(cid)
+            cid+=1
+        else:
+            newname = np.ravel(struct[n]['keys'])[0]
+        mapping[n] = newname
+            
+    G = nx.relabel_nodes(F,mapping)
+    
+    return G
+
+def show_tree(graph):
+    tree = nx.bfs_tree(graph, "comp_0")
+    positions = nx.drawing.nx_agraph.graphviz_layout(tree, prog="dot")
+    node_type = [True if degree[1]>1 else False for degree in tree.degree()]
+    node_colors = ['red']+['blue' if k else 'green' for k in node_type][1:]
+    node_sizes = [800]+[500 if k else 200 for k in node_type][1:]
+    nx.draw_networkx_nodes(tree, positions, node_color=node_colors, alpha= 0.2, node_size=node_sizes)
+    nx.draw_networkx_labels(tree, positions, font_size=8)
+    nx.draw_networkx_edges(tree, positions, alpha=0.5)
+
+
+def descendants(F, node):
+    desc = [[n] if (not isinstance(n, str)) else [sn for sn in nx.nodes(nx.dfs_tree(F, n)) if not isinstance(sn, str)] for n in F.successors(node)]
+    return np.concatenate(desc)
+
+def successors(F, node):
+    node_list = [n for n in F.successors(node)]
+#    node_list = {'comp': [n for n in F.successors(node) if isinstance(n, str)],
+#     'elem': [n for n in F.successors(node) if not isinstance(n, str)],
+#     'all_elem': [n for n in nx.nodes(nx.dfs_tree(F, node)) if not isinstance(n, str)]}
+    return node_list
+
+def comps_level(F):
+    comps_length = len([n for n in nx.nodes(nx.dfs_tree(F, 'comp_0')) if isinstance(n, str)])
+    l = [['comp_0']]
+    length = 0
+    while length<comps_length:
+        l.append([])
+        for c in l[-2]:
+            l[-1]+=[n for n in F.successors(c) if isinstance(n, str)]
+            length += len(l[-1])
+    return l
+
+def ravel_comps(F):
+    comps = {}
+    comp_ids = [n for n in nx.nodes(nx.dfs_tree(F, 'comp_0')) if isinstance(n, str)]
+    for c in comp_ids:
+        comps[c] = [n for n in F.successors(c)]
+    return comps
+
+def globbox(bboxes, elems):
+    x = min([bboxes[e]['left'] for e in elems])
+    y = min([bboxes[e]['bottom'] for e in elems])
+    w = max([bboxes[e]['right'] for e in elems])-x
+    h = max([bboxes[e]['top'] for e in elems])-y
+    bbox = {'marker_full':sum([bboxes[e]['marker_full'] for e in elems], 0),
+                         'box':(x,y,w,h), 'centerx':x+0.5*w,
+                         'centery':y+0.5*h, 'top':y+h,
+                         'bottom':y, 'right':x+w,
+                         'left':x, 'edges':np.array([[[x,y],[x,y+h]],
+                                                     [[x,y],[x+w,y]],
+                                                     [[x,y+h],[x+w,y+h]],
+                                                     [[x+w,y],[x+w,y+h]]]),
+                         'corners':np.array([[x,y],
+                                             [x,y+h],
+                                             [x+w,y],
+                                             [x+w,y+h]])}
+    return bbox
+
+#%%
+from time import time
+
+t_start = time()
+fpath =  "../datasets/Formulas/formulas-data/im15.png"
+
+max_area = min(im.shape)//9
+im, bboxes = test_formula(fpath, areas = range(1,27))
 
 points = np.array([[bboxes[i]["centerx"], bboxes[i]["centery"]] for i in bboxes.keys()])
+coords = [[i]+[bboxes[i][k] for k in ['centerx','centery','left']] for i in bboxes.keys()]
 
+struct, leaves = ppc(bboxes)
+
+print(time()-t_start)
+F = create_graph(struct)
+show_tree(F)
+
+comp_bboxes = bboxes.copy()
+
+for cname in np.concatenate(comps_level(F)).tolist()[::-1]:
+        comp_bboxes[cname] = globbox(comp_bboxes, descendants(F, cname))
+
+ordered_comps = {}
+for cname in np.concatenate(comps_level(F)).tolist():
+    subs = []
+    succs = list(F.successors(cname))
+    for subc in succs:
+        subc_coords = [comp_bboxes[subc][k] for k in ['centerx','centery','left']]
+        subs.append(subc_coords)
+    ordered_comps[cname] = [succs[i] for i in [i[0] for i in sorted(enumerate(subs), key=lambda x: (x[1][2], x[1][1]))]]
+
+
+
+
+fig, ax = plt.subplots()
+ax.imshow(im, origin='lower', cmap=cm.binary_r)
+ax.scatter(points[:,0], points[:,1])
+
+for i, txt in enumerate(range(len(points))):
+    ax.annotate(txt, (points[i,0]+5, points[i,1]+5), color='r')
+
+
+#%%
 
 # compute Voronoi tesselation
 try:
@@ -396,21 +609,10 @@ except:
     fov_neighbors = direct_neighbors = {0:(1,),1:(0,)}
 
 
-
-
-
-
-fig, ax = plt.subplots()
-ax.imshow(np.sum([bboxes[i]['marker'] for i in bboxes.keys()], axis=0), origin='lower', cmap=cm.binary)
-ax.scatter(points[:,0], points[:,1])
-
 for i in bboxes.keys():
-    for j in fov_neighbors[i]:
+    for j in direct_neighbors[i]:
         if j>i:
             ax.plot(points[[i,j],0], points[[i,j],1],'k')
-
-for i, txt in enumerate(range(len(points))):
-    ax.annotate(txt, (points[i,0]+5, points[i,1]+5), color='r')
 
 for i in bboxes.keys():
     for n in direct_neighbors[i]:
